@@ -15,9 +15,9 @@ class Statcast:
     Handles API requests, video URL downloads, and local caching.
     """
     def __init__(
-            self,
-            season_list: Optional[List[Union[str, int]]] = [],
-            cache_dir: Optional[Union[str, Path]] = None
+        self,
+        season_list: Optional[List[Union[str, int]]] = [],
+        cache_dir: Optional[Union[str, Path]] = None
     ):
 
         """
@@ -40,10 +40,10 @@ class Statcast:
             self.read_processed_data(season_list)
 
     def _fetch_video_urls(
-            self,
-            start_date: str,
-            end_date: str,
-            pitcher_id: Union[str, int]
+        self,
+        start_date: str,
+        end_date: str,
+        pitcher_id: Union[str, int]
     ) -> pd.DataFrame:
         """
         Helper function to submit HTTP request to the statcast page containing
@@ -94,7 +94,7 @@ class Statcast:
 
     @staticmethod
     def _process_video_url_response(
-            response: requests.Response
+        response: requests.Response
     ) -> pd.DataFrame:
         """
         Parses the HTML response from the statcast video search page.
@@ -159,10 +159,10 @@ class Statcast:
         return df
 
     def get_video_urls(
-            self,
-            start_date: str,
-            end_date: str,
-            pitcher_id: Union[str, int]
+        self,
+        start_date: str,
+        end_date: str,
+        pitcher_id: Union[str, int]
     ) -> pd.DataFrame:
         """
         Get the video URL data as a DataFrame for a specific pitcher id.
@@ -199,9 +199,9 @@ class Statcast:
         return df
 
     def get_data(
-            self,
-            start_date: str,
-            end_date: str
+        self,
+        start_date: str,
+        end_date: str
     ) -> pd.DataFrame:
         """
         Pulls in statcast data from pybaseball, video URL data from the
@@ -310,8 +310,8 @@ class Statcast:
         return df_statcast
 
     def process_season(
-            self,
-            season: Union[str, int],
+        self,
+        season: Union[str, int],
     ) -> None:
         """
         Process and cache merged statcast + video data for a full MLB season.
@@ -327,8 +327,8 @@ class Statcast:
         df.to_pickle(self.cache_dir / "processed_seasons" / f"{season}.pkl")
 
     def read_processed_data(
-            self,
-            season_list: List[Union[str, int]]
+        self,
+        season_list: List[Union[str, int]]
     ) -> None:
         """
         Read and concatenate processed statcast data for multiple seasons.
