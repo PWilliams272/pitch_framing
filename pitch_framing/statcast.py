@@ -7,6 +7,7 @@ from pathlib import Path
 from tqdm import tqdm
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Optional, List, Union
+from collections.abc import Iterable
 
 
 class Statcast:
@@ -346,3 +347,57 @@ class Statcast:
             df = pd.read_pickle(fn)
             df_list.append(df)
         self.data = pd.concat(df_list, ignore_index=True)
+
+    def download_video(
+        self,
+        video_url: Union[str, List[str]],
+        output_path: Union[str, Path],
+        force: bool = False
+    ) -> None:
+        """
+        Download video from the Statcast URL
+
+        Args:
+            video_url (str or list[str]): The URL or list of URLs of the
+                video(s) to download.
+            output_path (str or Path): The directory to save the downloaded
+                video(s).
+            force (bool): Whether to force re-download the video if it already
+                exists.
+        """
+        # Allow both str and iterable of str
+        if isinstance(video_url, Iterable) and not isinstance(video_url, str):
+            for url in tqdm(video_url):
+                self.download_video(url, output_path, force)
+            return
+
+        output_path = Path(output_path)
+        output_path.mkdir(parents=True, exist_ok=True)
+
+        video_id = str(video_url).split('playId=')[-1]
+        filename = output_path / f'{video_id}.mp4'
+        if filename.exists() and not force:
+            return
+
+        try:
+            # Get the actual video file URL from the video page
+            response = requests.get(video_url)
+            response.raise_for_status()
+            soup = BeautifulSoup(response.text, 'html.parser')
+            video_tag = soup.find('video')
+            if not video_tag:
+                print(f'No video tag found for {video_url}')
+                return
+            source_tag = video_tag.find('source')
+            if source_tag and source_tag.has_attr('src'):
+                file_url = source_tag['src']
+                video_resp = requests.get(file_url, stream=True)
+                video_resp.raise_for_status()
+                with open(filename, 'wb') as f:
+                    for chunk in video_resp.iter_content(chunk_size=8192):
+                        if chunk:
+                            f.write(chunk)
+            else:
+                print(f'No video source found for {video_url}')
+        except Exception as e:
+            print(f'Error downloading {video_url}: {e}')
