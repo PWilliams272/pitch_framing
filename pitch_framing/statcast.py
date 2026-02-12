@@ -9,7 +9,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Optional, List, Union
 
 
-class StatCast:
+class Statcast:
     """
     Interface for accessing and caching MLB Statcast data.
     Handles API requests, video URL downloads, and local caching.
@@ -21,7 +21,7 @@ class StatCast:
     ):
 
         """
-        Initialize StatCast object.
+        Initialize Statcast object.
 
         Args:
             season_list (list, optional): List of seasons to preload processed
@@ -300,7 +300,7 @@ class StatCast:
 
         df_statcast = pd.merge(
             df_statcast,
-            df_video_urls[merge_cols + ['video_url']],
+            df_video_urls[merge_cols + ['pitcher_name', 'video_url']],
             on=merge_cols,
             how='left',
             validate='1:1'
@@ -311,7 +311,7 @@ class StatCast:
 
     def process_season(
             self,
-            season: Union[str, int]
+            season: Union[str, int],
     ) -> None:
         """
         Process and cache merged statcast + video data for a full MLB season.
