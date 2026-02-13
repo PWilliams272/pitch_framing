@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 import shutil
 import torch
-from typing import Optional, Union, Any, List
+from typing import Optional, Union, Any, List, Dict
 
 
 class GloveTracker:
@@ -17,6 +17,7 @@ class GloveTracker:
         model_name: Optional[str] = None,
         dataset_location: Optional[Union[str, Path]] = None,
         dataset_name: Optional[str] = None,
+        model_pt_path: Optional[Union[str, Path]] = None
     ) -> None:
         """
         Initialize the GloveTracker with a YOLOv8 model.
@@ -28,6 +29,8 @@ class GloveTracker:
             dataset_location: Path to the directory containing datasets.
                 Defaults to ~/.pitch_framing/datasets.
             dataset_name: Name of the dataset to use.
+            model_pt_path: Path to a specific model weights file (.pt). If
+                provided, overrides model_location/model_name.
         """
         if model_location:
             self.model_location = Path(model_location)
@@ -42,7 +45,35 @@ class GloveTracker:
             )
         os.makedirs(self.dataset_location, exist_ok=True)
         self.dataset_name = dataset_name
-        self.model = None
+        self.model_pt_path = model_pt_path
+        if self.model_pt_path is not None:
+            self.model = YOLO(self.model_pt_path)
+        else:
+            self.model = None
+
+    def _update_config(
+        self, 
+        **kwargs
+    ) -> Dict[str, Union[str, Path]]:
+        """
+        Helper function to handle updates to configuration parameters and
+        instance member variables. If an argument is provided, it takes
+        precedence over the existing member variable and will overwrite it.
+        Also handles typing for path-like objects.
+        Returns a dictionary of the current configuration after updates,
+        which can be used
+        """
+        _PATH_KEYS = ["model_location", "dataset_location", "model_pt_path"]
+        config = {}
+        for key, value in kwargs.items():
+            if value is None:
+                config[key] = getattr(self, key)
+                continue
+            if key in _PATH_KEYS and not isinstance(value, Path):
+                value = Path(value)
+            setattr(self, key, value)
+            config[key] = getattr(self, key)
+        return config
 
     def check_available_datasets(
         self,
@@ -119,8 +150,7 @@ class GloveTracker:
             dataset_location: The directory to save the dataset. If None, will
                 default to self.dataset_location.
         """
-        if dataset_location:
-            self.dataset_location = Path(dataset_location)
+        self._update_config(dataset_location=dataset_location)
         os.makedirs(self.dataset_location, exist_ok=True)
 
         roboflow = Roboflow(api_key=os.environ['ROBOFLOW_API_KEY'])
@@ -179,10 +209,10 @@ class GloveTracker:
             dataset_name: Name of the dataset. Defaults to self.dataset_name.
             **kwargs: Additional arguments passed to YOLO.train().
         """
-        if model_location:
-            self.model_location = Path(model_location)
-        if model_name:
-            self.model_name = model_name
+        self._update_config(
+            model_location=model_location,
+            model_name=model_name
+        )
         if self.model_name is None:
             available_models = self.check_available_models(self.model_location)
             available_models = [
@@ -222,8 +252,10 @@ class GloveTracker:
             model_location: Directory containing the trained model.
             model_name: Name of the model to load.
         """
-        self.model_location = Path(model_location)
-        self.model_name = model_name
+        self._update_config(
+            model_location=model_location,
+            model_name=model_name
+        )
         self.model = YOLO(
             self.model_location / self.model_name / "weights" / "best.pt"
         )
@@ -250,17 +282,16 @@ class GloveTracker:
         Returns:
             Any: The results object from YOLO model inference.
         """
-        if model_pt_path is not None:
-            self.model = YOLO(model_pt_path)
-        else:
-            if model_location is not None:
-                self.model_location = Path(model_location)
-            if model_name is not None:
-                self.model_name = model_name
-            self.model = YOLO(
+        self._update_config(
+            model_location=model_location,
+            model_name=model_name,
+            model_pt_path=model_pt_path
+        )
+        if self.model_pt_path is None:
+            self.model_pt_path = (
                 self.model_location / self.model_name / "weights" / "best.pt"
             )
-
+        self.model = YOLO(self.model_pt_path)
         self.model.eval()
         with torch.inference_mode():
             results = self.model(video_path)
