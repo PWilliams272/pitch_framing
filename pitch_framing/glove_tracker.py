@@ -5,6 +5,7 @@ from pathlib import Path
 import shutil
 import torch
 from typing import Optional, Union, Any, List, Dict
+import re
 
 
 class GloveTracker:
@@ -52,7 +53,7 @@ class GloveTracker:
             self.model = None
 
     def _update_config(
-        self, 
+        self,
         **kwargs
     ) -> Dict[str, Union[str, Path]]:
         """
@@ -214,15 +215,16 @@ class GloveTracker:
             model_name=model_name
         )
         if self.model_name is None:
-            available_models = self.check_available_models(self.model_location)
-            available_models = [
-                m for m in available_models if m.startswith('run_') and
-                m.split('_', 1)[1].isdigit()
+            available_models = self.check_available_models(
+                self.model_location
+            )
+            run_nums = [
+                int(m[4:]) for m in available_models if
+                re.fullmatch(r"run_\d+", m)
             ]
-            available_models.sort(key=lambda m: int(m.split('_', 1)[1]))
-            last_model_num = int(available_models[-1].split('_', 1)[1])
-            self.model_name = f"run_{last_model_num + 1}"
-            print("Creating model:", self.model_name)
+            next_num = max(run_nums) + 1 if run_nums else 1
+            self.model_name = f"run_{next_num}"
+            print(f"Creating model: {self.model_name}")
         if dataset_location:
             self.dataset_location = Path(dataset_location)
         if dataset_name:
