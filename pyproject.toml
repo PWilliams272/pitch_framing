@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pitch_framing"
+version = "0.1.0"
+description = "Pitch framing analysis using video and object detection"
+authors = [
+    { name = "Peter Williams" }
+]
+readme = "README.md"
+requires-python = ">=3.7"
+dependencies = [
+    "matplotlib",
+    "numpy",
+    "opencv-python",
+    "pybaseball",
+    "ultralytics"
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "black",
+    "mypy"
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
