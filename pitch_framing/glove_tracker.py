@@ -9,8 +9,18 @@ import re
 
 
 class GloveTracker:
-    """
-    Glove Tracker class
+    """Orchestrates glove tracking modeling.
+
+    Class handles downloading and managing datasets from Roboflow,
+    training models, making predictions.
+
+    Attributes:
+        model_location (Path): Path to the directory containing models.
+        model_name (str): Name of the model to use or create.
+        dataset_location (Path): Path to the directory containing datasets.
+        dataset_name (str): Name of the dataset to use.
+        model_pt_path (Path): Path to a specific model weights file (.pt).
+        model (YOLO): The YOLO model instance.
     """
     def __init__(
         self,
@@ -20,8 +30,7 @@ class GloveTracker:
         dataset_name: Optional[str] = None,
         model_pt_path: Optional[Union[str, Path]] = None
     ) -> None:
-        """
-        Initialize the GloveTracker with a YOLOv8 model.
+        """Initialize GloveTracker
 
         Args:
             model_location: Path to the directory containing models. Defaults
@@ -31,7 +40,7 @@ class GloveTracker:
                 Defaults to ~/.pitch_framing/datasets.
             dataset_name: Name of the dataset to use.
             model_pt_path: Path to a specific model weights file (.pt). If
-                provided, overrides model_location/model_name.
+                provided, will automatically load in the model.
         """
         if model_location:
             self.model_location = Path(model_location)
@@ -56,13 +65,19 @@ class GloveTracker:
         self,
         **kwargs
     ) -> Dict[str, Union[str, Path]]:
-        """
+        """Update configuration parameters.
+
         Helper function to handle updates to configuration parameters and
         instance member variables. If an argument is provided, it takes
         precedence over the existing member variable and will overwrite it.
         Also handles typing for path-like objects.
-        Returns a dictionary of the current configuration after updates,
-        which can be used
+        Returns a dictionary of the current configuration after updates.
+
+        Args:
+            **kwargs: Configuration parameters to update.
+
+        Returns:
+            Dict[str, Union[str, Path]]: The updated configuration.
         """
         _PATH_KEYS = ["model_location", "dataset_location", "model_pt_path"]
         config = {}
@@ -80,7 +95,8 @@ class GloveTracker:
         self,
         dataset_location: Optional[Union[str, Path]] = None
     ) -> List[str]:
-        """
+        """Check available datasets.
+
         Helper function to check the datasets downloaded and available for
         training.
 
@@ -107,8 +123,9 @@ class GloveTracker:
         self,
         model_location: Optional[Union[str, Path]] = None
     ) -> List[str]:
-        """
-        Helper function to check the available trained models
+        """Check available models.
+
+        Helper function to check the available trained models.
 
         Args:
             model_location: The directory to check for available models.
@@ -137,9 +154,12 @@ class GloveTracker:
         dataset_location: Optional[Union[str, Path]] = None,
         dataset_format: str = 'yolov8'
     ) -> None:
-        """
-        Download annotated dataset from Roboflow for model training. Requires
-        Roboflow API key stored as an environment variable.
+        """Download annotated Roboflow dataset.
+
+        Downloads an annotated dataset from Roboflow for model training.
+        Requires Roboflow API key stored as an environment variable, other
+        necessary parameters (workspace, project, version) can be set as
+        environment variables or passed as arguments.
 
         Args:
             workspace: The Roboflow workspace name (or set as environment
@@ -192,15 +212,19 @@ class GloveTracker:
         dataset_name: Optional[str] = None,
         **kwargs
     ) -> None:
-        """
-        Train a YOLOv8 model on the specified dataset.
+        """Train a YOLO model.
+
+        Fine tunes a YOLO model using the specified dataset and training
+        parameters. By default, will use the pretrained yolov8n.pt model
+        as the initial weights. Additional training parameters can be
+        specified as keyword arguments.
 
         Args:
             model_location: Directory to save the trained model. Defaults
                 to self.model_location.
             model_name: Name for the trained model. If None, a new name is
                 generated.
-            base_model: Path or name of the base YOLOv8 model to fine-tune.
+            base_model: Path or name of the base YOLO model to fine-tune.
                 Defaults to 'yolov8n.pt'.
             epochs: Number of training epochs. Defaults to 50.
             lr0: Initial learning rate. Defaults to 0.01.
@@ -247,8 +271,7 @@ class GloveTracker:
         model_location: Union[str, Path],
         model_name: str,
     ) -> None:
-        """
-        Load a trained YOLOv8 model from the specified location.
+        """Load a trained YOLO model.
 
         Args:
             model_location: Directory containing the trained model.
@@ -269,8 +292,7 @@ class GloveTracker:
         model_location: Optional[Union[str, Path]] = None,
         model_name: Optional[str] = None,
     ) -> Any:
-        """
-        Run inference on a video using the trained YOLOv8 model.
+        """Run inference on a video.
 
         Args:
             video_path: Path to the video file for inference.
