@@ -287,7 +287,7 @@ class GloveTracker:
 
     def run_inference(
         self,
-        video_path: Union[str, Path],
+        video_path: Union[str, Path, List[Union[str, Path]]],
         model_pt_path: Optional[Union[str, Path]] = None,
         model_location: Optional[Union[str, Path]] = None,
         model_name: Optional[str] = None,
@@ -295,7 +295,8 @@ class GloveTracker:
         """Run inference on a video.
 
         Args:
-            video_path: Path to the video file for inference.
+            video_path: Path or list of paths to the video file(s) for
+                inference.
             model_pt_path: Path to a specific model weights file (.pt). If
                 provided, overrides model_location/model_name.
             model_location: Directory containing the model. Used if
@@ -318,5 +319,8 @@ class GloveTracker:
         self.model = YOLO(self.model_pt_path)
         self.model.eval()
         with torch.inference_mode():
-            results = self.model(video_path)
+            if isinstance(video_path, list):
+                results = [self.model(video) for video in video_path]
+            else:
+                results = self.model(video_path)
         return results
