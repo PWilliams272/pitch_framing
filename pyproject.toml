@@ -23,7 +23,10 @@ dependencies = [
 dev = [
     "pytest",
     "black",
-    "mypy"
+    "mypy",
+    "sphinx",
+    "sphinx-autodoc-typehints"
+    "sphinx_rtd_theme"
 ]
 
 [tool.setuptools.packages.find]
