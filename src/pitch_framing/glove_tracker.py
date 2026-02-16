@@ -6,6 +6,7 @@ import shutil
 import torch
 from typing import Optional, Union, Any, List, Dict
 import re
+import json
 
 
 class GloveTracker:
@@ -26,9 +27,10 @@ class GloveTracker:
         self,
         model_location: Optional[Union[str, Path]] = None,
         model_name: Optional[str] = None,
+        model_pt_path: Optional[Union[str, Path]] = None,
         dataset_location: Optional[Union[str, Path]] = None,
         dataset_name: Optional[str] = None,
-        model_pt_path: Optional[Union[str, Path]] = None
+        inference_location: Optional[Union[str, Path]] = None
     ) -> None:
         """Initialize GloveTracker
 
@@ -36,11 +38,13 @@ class GloveTracker:
             model_location: Path to the directory containing models. Defaults
                 to ~/.pitch_framing/models.
             model_name: Name of the model to use or create.
+            model_pt_path: Path to a specific model weights file (.pt). If
+                provided, will automatically load in the model.
             dataset_location: Path to the directory containing datasets.
                 Defaults to ~/.pitch_framing/datasets.
             dataset_name: Name of the dataset to use.
-            model_pt_path: Path to a specific model weights file (.pt). If
-                provided, will automatically load in the model.
+            inference_location: Path to the directory containing inference
+                results.
         """
         if model_location:
             self.model_location = Path(model_location)
@@ -61,6 +65,14 @@ class GloveTracker:
         else:
             self.model = None
 
+        if inference_location:
+            self.inference_location = Path(inference_location)
+        else:
+            self.inference_location = (
+                Path.home() / ".pitch_framing" / "inference"
+            )
+        os.makedirs(self.inference_location, exist_ok=True)
+
     def _update_config(
         self,
         **kwargs
@@ -79,7 +91,12 @@ class GloveTracker:
         Returns:
             Dict[str, Union[str, Path]]: The updated configuration.
         """
-        _PATH_KEYS = ["model_location", "dataset_location", "model_pt_path"]
+        _PATH_KEYS = [
+            "model_location",
+            "dataset_location",
+            "model_pt_path",
+            "inference_location"
+        ]
         config = {}
         for key, value in kwargs.items():
             if value is None:
@@ -268,8 +285,8 @@ class GloveTracker:
 
     def load_model(
         self,
-        model_location: Union[str, Path],
-        model_name: str,
+        model_location: Optional[Union[str, Path]] = None,
+        model_name: Optional[str] = None,
     ) -> None:
         """Load a trained YOLO model.
 
@@ -281,9 +298,44 @@ class GloveTracker:
             model_location=model_location,
             model_name=model_name
         )
+        if self.model_name is None:
+            raise AssertionError(
+                "model_name must be specified to load a model"
+            )
         self.model = YOLO(
             self.model_location / self.model_name / "weights" / "best.pt"
         )
+
+    def save_results_json(
+        self,
+        results: Any,
+        filename: Union[str, Path]
+    ) -> None:
+        """Save YOLO inference results to a JSON file.
+
+        Args:
+            results: The inference results to save.
+            filename: The path to the file where results will be saved.
+        """
+        json_results = []
+        for frame, _result in enumerate(results):
+            box_list = []
+            for box in _result.boxes:
+                xyxy = box.xyxy.cpu().numpy().flatten()
+                box_list.append({
+                    "class": int(box.cls[0]),
+                    "x_center": float((xyxy[0] + xyxy[2]) / 2),
+                    "y_center": float((xyxy[1] + xyxy[3]) / 2),
+                    "width": float(xyxy[2] - xyxy[0]),
+                    "height": float(xyxy[3] - xyxy[1]),
+                    "confidence": float(box.conf[0])
+                })
+            json_results.append({
+                "frame": frame,
+                "boxes": box_list
+            })
+        with open(filename, "w") as f:
+            json.dump(json_results, f, indent=2)
 
     def run_inference(
         self,
@@ -291,6 +343,8 @@ class GloveTracker:
         model_pt_path: Optional[Union[str, Path]] = None,
         model_location: Optional[Union[str, Path]] = None,
         model_name: Optional[str] = None,
+        save_results: bool = False,
+        inference_location: Optional[Union[str, Path]] = None,
     ) -> Any:
         """Run inference on a video.
 
@@ -303,6 +357,11 @@ class GloveTracker:
                 model_pt_path is not provided.
             model_name: Name of the model to use. Used if model_pt_path is
                 not provided.
+            save_results: Whether to save the inference results. If True,
+                results will be saved to the inference_location.
+            inference_location: Path to the directory where inference results
+                will be saved. If not provided, defaults to
+                ~/.pitch_framing/inference.
 
         Returns:
             Any: The results object from YOLO model inference.
@@ -310,7 +369,8 @@ class GloveTracker:
         self._update_config(
             model_location=model_location,
             model_name=model_name,
-            model_pt_path=model_pt_path
+            model_pt_path=model_pt_path,
+            inference_location=inference_location
         )
         if self.model_pt_path is None:
             self.model_pt_path = (
@@ -319,8 +379,25 @@ class GloveTracker:
         self.model = YOLO(self.model_pt_path)
         self.model.eval()
         with torch.inference_mode():
+            # If a list, loop over each video
             if isinstance(video_path, list):
-                results = [self.model(video) for video in video_path]
+                results_list = []
+                for video in video_path:
+                    _result = self.model(video)
+                    if save_results:
+                        filename = (
+                            self.inference_location
+                            / f"{Path(video).stem}_results.json"
+                        )
+                        self.save_results_json(_result, filename)
+                    results_list.append(_result)
+                results = results_list
             else:
                 results = self.model(video_path)
+                if save_results:
+                    filename = (
+                        self.inference_location
+                        / f"{Path(video_path).stem}_results.json"
+                    )
+                    self.save_results_json(results, filename)
         return results
