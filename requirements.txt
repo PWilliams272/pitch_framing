@@ -3,7 +3,3 @@ numpy
 opencv-python
 pybaseball
 ultralytics
-# Dev dependencies
-sphinx
-sphinx-autodoc-typehints
-sphinx_rtd_theme
