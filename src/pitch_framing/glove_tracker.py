@@ -383,27 +383,25 @@ class GloveTracker:
         if self.model is None:
             self.load_model()
 
+        # If a list, recursively call method
+        if isinstance(video_path, list):
+            results = [
+                self.run_inference(
+                    video_path=video,
+                    save_results=save_results
+                )
+                for video in video_path
+            ]
+            return results
+
+        # Set model to evaluation mode and disable torch gradient calculations
         self.model.eval()
         with torch.inference_mode():
-            # If a list, loop over each video
-            if isinstance(video_path, list):
-                results_list = []
-                for video in video_path:
-                    _result = self.model(video)
-                    if save_results:
-                        filename = (
-                            self.inference_location
-                            / f"{Path(video).stem}_results.json"
-                        )
-                        self.save_results_json(_result, filename)
-                    results_list.append(_result)
-                results = results_list
-            else:
-                results = self.model(video_path)
-                if save_results:
-                    filename = (
-                        self.inference_location
-                        / f"{Path(video_path).stem}_results.json"
-                    )
-                    self.save_results_json(results, filename)
+            results = self.model(video_path)
+            if save_results:
+                filename = (
+                    self.inference_location
+                    / f"{Path(video_path).stem}_results.json"
+                )
+                self.save_results_json(results, filename)
         return results
