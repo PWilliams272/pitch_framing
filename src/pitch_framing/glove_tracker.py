@@ -7,6 +7,7 @@ import torch
 from typing import Optional, Union, Any, List, Dict
 import re
 import json
+import cv2
 
 
 class GloveTracker:
@@ -30,7 +31,8 @@ class GloveTracker:
         model_pt_path: Optional[Union[str, Path]] = None,
         dataset_location: Optional[Union[str, Path]] = None,
         dataset_name: Optional[str] = None,
-        inference_location: Optional[Union[str, Path]] = None
+        inference_location: Optional[Union[str, Path]] = None,
+        labeled_video_location: Optional[Union[str, Path]] = None
     ) -> None:
         """Initialize GloveTracker
 
@@ -73,6 +75,14 @@ class GloveTracker:
             )
         os.makedirs(self.inference_location, exist_ok=True)
 
+        if labeled_video_location:
+            self.labeled_video_location = Path(labeled_video_location)
+        else:
+            self.labeled_video_location = (
+                Path.home() / ".pitch_framing" / "labeled_videos"
+            )
+        os.makedirs(self.labeled_video_location, exist_ok=True)
+
     def _update_config(
         self,
         **kwargs
@@ -95,7 +105,8 @@ class GloveTracker:
             "model_location",
             "dataset_location",
             "model_pt_path",
-            "inference_location"
+            "inference_location",
+            "labeled_video_location"
         ]
         config = {}
         for key, value in kwargs.items():
@@ -422,3 +433,93 @@ class GloveTracker:
                 with open(filename, "w") as f:
                     json.dump(results, f, indent=2)
         return results
+
+    def label_video(
+        self,
+        video_path: Union[str, Path],
+        results: Optional[List[Dict[str, Any]]] = None,
+        output_location: Optional[Union[str, Path]] = None,
+        force: bool = False
+    ):
+        """Draw bounding boxes on video.
+
+        Uses the JSON-encoded inference results from self.run_inference()
+        to draw bounding boxes on the input video and saves to
+        output_location.
+
+        Args:
+            video_path (str): Path to the input video.
+            results (list): JSON-encoded inference results from the YOLO
+                model. If None, will attempt to load from default locations.
+            output_location (str): Directory to save the labeled video.
+                Defaults to ~/.pitch_framing/labeled_videos.
+            force (bool): Whether to overwrite existing labeled videos.
+        """
+        self._update_config(labeled_video_location=output_location)
+        cap = cv2.VideoCapture(video_path)
+        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        output_path = (
+            self.labeled_video_location
+            / f"{Path(video_path).stem}_labeled.mp4"
+        )
+        if os.path.exists(output_path) and not force:
+            print("Labeled video already exists:", output_path)
+            return
+        out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
+
+        # If no results provided, attempt to load from disk or run inference
+        if results is None:
+            results_path = (
+                self.inference_location
+                / f"{Path(video_path).stem}_results.json"
+            )
+            if os.path.exists(results_path):
+                print("Loading inference results from", results_path)
+                with open(results_path) as f:
+                    results = json.load(f)
+            else:
+                print("Running inference...")
+                results = self.run_inference(
+                    video_path=video_path,
+                    save_results=True
+                )
+
+        # Predefined color map for up to 5 classes (BGR format)
+        color_map = {
+            0: (0, 255, 0),      # Green
+            1: (0, 0, 255),      # Red
+            2: (255, 0, 0),      # Blue
+            3: (0, 255, 255),    # Yellow
+            4: (255, 0, 255),    # Magenta
+        }
+
+        for frame_idx, frame_result in enumerate(results):
+            ret, frame = cap.read()
+            if not ret:
+                break
+            for box in frame_result['boxes']:
+                x_center = box['x_center']
+                y_center = box['y_center']
+                width_box = box['width']
+                height_box = box['height']
+                conf = box['confidence']
+                class_id = box['class']
+                # Convert center/width/height to x1, y1, x2, y2
+                x1 = int(x_center - width_box / 2)
+                y1 = int(y_center - height_box / 2)
+                x2 = int(x_center + width_box / 2)
+                y2 = int(y_center + height_box / 2)
+                color = color_map.get(class_id, (0, 255, 0))
+                cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
+                label = f"{self.model.names[class_id]} {conf:.2f}"
+                cv2.putText(
+                    frame, label, (x1, y1-10),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
+            out.write(frame)
+
+        cap.release()
+        out.release()
+        print(f"Labeled video saved to {output_path}")
