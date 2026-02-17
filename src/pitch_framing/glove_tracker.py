@@ -314,16 +314,14 @@ class GloveTracker:
             )
         self.model = YOLO(self.model_pt_path)
 
-    def save_results_json(
+    def yolo_results_to_json(
         self,
-        results: Any,
-        filename: Union[str, Path]
-    ) -> None:
-        """Save YOLO inference results to a JSON file.
+        results
+    ):
+        """Convert YOLO inference results to JSON format.
 
         Args:
             results: The inference results to save.
-            filename: The path to the file where results will be saved.
         """
         json_results = []
         for frame, _result in enumerate(results):
@@ -342,6 +340,20 @@ class GloveTracker:
                 "frame": frame,
                 "boxes": box_list
             })
+        return json_results
+
+    def save_results_json(
+        self,
+        results: Any,
+        filename: Union[str, Path]
+    ) -> None:
+        """Save YOLO inference results to a JSON file.
+
+        Args:
+            results: The inference results to save.
+            filename: The path to the file where results will be saved.
+        """
+        json_results = self.yolo_results_to_json(results)
         with open(filename, "w") as f:
             json.dump(json_results, f, indent=2)
 
