@@ -409,7 +409,7 @@ class GloveTracker:
         # Set model to evaluation mode and disable torch gradient calculations
         self.model.eval()
         with torch.inference_mode():
-            results = self.model(video_path)
+            results = self.model(video_path, stream=True)
             if save_results:
                 filename = (
                     self.inference_location
