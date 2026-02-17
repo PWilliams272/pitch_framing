@@ -6,6 +6,8 @@ import shutil
 import torch
 from typing import Optional, Union, Any, List, Dict
 import re
+import json
+import cv2
 
 
 class GloveTracker:
@@ -26,9 +28,11 @@ class GloveTracker:
         self,
         model_location: Optional[Union[str, Path]] = None,
         model_name: Optional[str] = None,
+        model_pt_path: Optional[Union[str, Path]] = None,
         dataset_location: Optional[Union[str, Path]] = None,
         dataset_name: Optional[str] = None,
-        model_pt_path: Optional[Union[str, Path]] = None
+        inference_location: Optional[Union[str, Path]] = None,
+        labeled_video_location: Optional[Union[str, Path]] = None
     ) -> None:
         """Initialize GloveTracker
 
@@ -36,11 +40,13 @@ class GloveTracker:
             model_location: Path to the directory containing models. Defaults
                 to ~/.pitch_framing/models.
             model_name: Name of the model to use or create.
+            model_pt_path: Path to a specific model weights file (.pt). If
+                provided, will automatically load in the model.
             dataset_location: Path to the directory containing datasets.
                 Defaults to ~/.pitch_framing/datasets.
             dataset_name: Name of the dataset to use.
-            model_pt_path: Path to a specific model weights file (.pt). If
-                provided, will automatically load in the model.
+            inference_location: Path to the directory containing inference
+                results.
         """
         if model_location:
             self.model_location = Path(model_location)
@@ -61,6 +67,22 @@ class GloveTracker:
         else:
             self.model = None
 
+        if inference_location:
+            self.inference_location = Path(inference_location)
+        else:
+            self.inference_location = (
+                Path.home() / ".pitch_framing" / "inference"
+            )
+        os.makedirs(self.inference_location, exist_ok=True)
+
+        if labeled_video_location:
+            self.labeled_video_location = Path(labeled_video_location)
+        else:
+            self.labeled_video_location = (
+                Path.home() / ".pitch_framing" / "labeled_videos"
+            )
+        os.makedirs(self.labeled_video_location, exist_ok=True)
+
     def _update_config(
         self,
         **kwargs
@@ -79,7 +101,13 @@ class GloveTracker:
         Returns:
             Dict[str, Union[str, Path]]: The updated configuration.
         """
-        _PATH_KEYS = ["model_location", "dataset_location", "model_pt_path"]
+        _PATH_KEYS = [
+            "model_location",
+            "dataset_location",
+            "model_pt_path",
+            "inference_location",
+            "labeled_video_location"
+        ]
         config = {}
         for key, value in kwargs.items():
             if value is None:
@@ -268,22 +296,80 @@ class GloveTracker:
 
     def load_model(
         self,
-        model_location: Union[str, Path],
-        model_name: str,
+        model_location: Optional[Union[str, Path]] = None,
+        model_name: Optional[str] = None,
+        model_pt_path: Optional[Union[str, Path]] = None
     ) -> None:
         """Load a trained YOLO model.
 
         Args:
             model_location: Directory containing the trained model.
             model_name: Name of the model to load.
+            model_pt_path: Path to the model weights file (.pt).
         """
         self._update_config(
             model_location=model_location,
-            model_name=model_name
+            model_name=model_name,
+            model_pt_path=model_pt_path
         )
-        self.model = YOLO(
-            self.model_location / self.model_name / "weights" / "best.pt"
-        )
+        # Require either model_name or model_pt_path to load a model
+        if self.model_name is None and self.model_pt_path is None:
+            raise AssertionError(
+                "model_name or model_pt_path must be specified "
+                "to load a model"
+            )
+        # If model_pt_path is not specified, use the default path
+        if self.model_pt_path is None:
+            self.model_pt_path = (
+                self.model_location / self.model_name / "weights" / "best.pt"
+            )
+        self.model = YOLO(self.model_pt_path)
+
+    def yolo_results_to_json(
+        self,
+        results
+    ) -> List[Dict[str, Any]]:
+        """Convert YOLO inference results to JSON format.
+
+        Args:
+            results: The inference results to save.
+
+        Returns:
+            List[Dict[str, Any]]: The JSON-encoded inference results.
+        """
+        json_results = []
+        for frame, _result in enumerate(results):
+            box_list = []
+            for box in _result.boxes:
+                xyxy = box.xyxy.cpu().numpy().flatten()
+                box_list.append({
+                    "class": int(box.cls[0]),
+                    "x_center": float((xyxy[0] + xyxy[2]) / 2),
+                    "y_center": float((xyxy[1] + xyxy[3]) / 2),
+                    "width": float(xyxy[2] - xyxy[0]),
+                    "height": float(xyxy[3] - xyxy[1]),
+                    "confidence": float(box.conf[0])
+                })
+            json_results.append({
+                "frame": frame,
+                "boxes": box_list
+            })
+        return json_results
+
+    def save_results_json(
+        self,
+        results: Any,
+        filename: Union[str, Path]
+    ) -> None:
+        """Save YOLO inference results to a JSON file.
+
+        Args:
+            results: The inference results to save.
+            filename: The path to the file where results will be saved.
+        """
+        json_results = self.yolo_results_to_json(results)
+        with open(filename, "w") as f:
+            json.dump(json_results, f, indent=2)
 
     def run_inference(
         self,
@@ -291,7 +377,9 @@ class GloveTracker:
         model_pt_path: Optional[Union[str, Path]] = None,
         model_location: Optional[Union[str, Path]] = None,
         model_name: Optional[str] = None,
-    ) -> Any:
+        save_results: bool = False,
+        inference_location: Optional[Union[str, Path]] = None,
+    ) -> List[Dict[str, Any]]:
         """Run inference on a video.
 
         Args:
@@ -303,24 +391,135 @@ class GloveTracker:
                 model_pt_path is not provided.
             model_name: Name of the model to use. Used if model_pt_path is
                 not provided.
+            save_results: Whether to save the inference results. If True,
+                results will be saved to the inference_location.
+            inference_location: Path to the directory where inference results
+                will be saved. If not provided, defaults to
+                ~/.pitch_framing/inference.
 
         Returns:
-            Any: The results object from YOLO model inference.
+            List[Dict[str, Any]]: The JSON-encoded inference results.
         """
         self._update_config(
             model_location=model_location,
             model_name=model_name,
-            model_pt_path=model_pt_path
+            model_pt_path=model_pt_path,
+            inference_location=inference_location
         )
-        if self.model_pt_path is None:
-            self.model_pt_path = (
-                self.model_location / self.model_name / "weights" / "best.pt"
-            )
-        self.model = YOLO(self.model_pt_path)
+        if self.model is None:
+            self.load_model()
+
+        # If a list, recursively call method
+        if isinstance(video_path, list):
+            results = [
+                self.run_inference(
+                    video_path=video,
+                    save_results=save_results
+                )
+                for video in video_path
+            ]
+            return results
+
+        # Set model to evaluation mode and disable torch gradient calculations
         self.model.eval()
         with torch.inference_mode():
-            if isinstance(video_path, list):
-                results = [self.model(video) for video in video_path]
-            else:
-                results = self.model(video_path)
+            results = self.model(video_path, stream=True)
+            results = self.yolo_results_to_json(results)
+            if save_results:
+                filename = (
+                    self.inference_location
+                    / f"{Path(video_path).stem}_results.json"
+                )
+                with open(filename, "w") as f:
+                    json.dump(results, f, indent=2)
         return results
+
+    def label_video(
+        self,
+        video_path: Union[str, Path],
+        results: Optional[List[Dict[str, Any]]] = None,
+        output_location: Optional[Union[str, Path]] = None,
+        force: bool = False
+    ):
+        """Draw bounding boxes on video.
+
+        Uses the JSON-encoded inference results from self.run_inference()
+        to draw bounding boxes on the input video and saves to
+        output_location.
+
+        Args:
+            video_path (str): Path to the input video.
+            results (list): JSON-encoded inference results from the YOLO
+                model. If None, will attempt to load from default locations.
+            output_location (str): Directory to save the labeled video.
+                Defaults to ~/.pitch_framing/labeled_videos.
+            force (bool): Whether to overwrite existing labeled videos.
+        """
+        self._update_config(labeled_video_location=output_location)
+        cap = cv2.VideoCapture(video_path)
+        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        output_path = (
+            self.labeled_video_location
+            / f"{Path(video_path).stem}_labeled.mp4"
+        )
+        if os.path.exists(output_path) and not force:
+            print("Labeled video already exists:", output_path)
+            return
+        out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
+
+        # If no results provided, attempt to load from disk or run inference
+        if results is None:
+            results_path = (
+                self.inference_location
+                / f"{Path(video_path).stem}_results.json"
+            )
+            if os.path.exists(results_path):
+                print("Loading inference results from", results_path)
+                with open(results_path) as f:
+                    results = json.load(f)
+            else:
+                print("Running inference...")
+                results = self.run_inference(
+                    video_path=video_path,
+                    save_results=True
+                )
+
+        # Predefined color map for up to 5 classes (BGR format)
+        color_map = {
+            0: (0, 255, 0),      # Green
+            1: (0, 0, 255),      # Red
+            2: (255, 0, 0),      # Blue
+            3: (0, 255, 255),    # Yellow
+            4: (255, 0, 255),    # Magenta
+        }
+
+        for frame_idx, frame_result in enumerate(results):
+            ret, frame = cap.read()
+            if not ret:
+                break
+            for box in frame_result['boxes']:
+                x_center = box['x_center']
+                y_center = box['y_center']
+                width_box = box['width']
+                height_box = box['height']
+                conf = box['confidence']
+                class_id = box['class']
+                # Convert center/width/height to x1, y1, x2, y2
+                x1 = int(x_center - width_box / 2)
+                y1 = int(y_center - height_box / 2)
+                x2 = int(x_center + width_box / 2)
+                y2 = int(y_center + height_box / 2)
+                color = color_map.get(class_id, (0, 255, 0))
+                cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
+                label = f"{self.model.names[class_id]} {conf:.2f}"
+                cv2.putText(
+                    frame, label, (x1, y1-10),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
+            out.write(frame)
+
+        cap.release()
+        out.release()
+        print(f"Labeled video saved to {output_path}")
