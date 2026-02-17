@@ -317,11 +317,14 @@ class GloveTracker:
     def yolo_results_to_json(
         self,
         results
-    ):
+    ) -> List[Dict[str, Any]]:
         """Convert YOLO inference results to JSON format.
 
         Args:
             results: The inference results to save.
+
+        Returns:
+            List[Dict[str, Any]]: The JSON-encoded inference results.
         """
         json_results = []
         for frame, _result in enumerate(results):
@@ -365,7 +368,7 @@ class GloveTracker:
         model_name: Optional[str] = None,
         save_results: bool = False,
         inference_location: Optional[Union[str, Path]] = None,
-    ) -> Any:
+    ) -> List[Dict[str, Any]]:
         """Run inference on a video.
 
         Args:
@@ -384,7 +387,7 @@ class GloveTracker:
                 ~/.pitch_framing/inference.
 
         Returns:
-            Any: The results object from YOLO model inference.
+            List[Dict[str, Any]]: The JSON-encoded inference results.
         """
         self._update_config(
             model_location=model_location,
@@ -410,10 +413,12 @@ class GloveTracker:
         self.model.eval()
         with torch.inference_mode():
             results = self.model(video_path, stream=True)
+            results = self.yolo_results_to_json(results)
             if save_results:
                 filename = (
                     self.inference_location
                     / f"{Path(video_path).stem}_results.json"
                 )
-                self.save_results_json(results, filename)
+                with open(filename, "w") as f:
+                    json.dump(results, f, indent=2)
         return results
