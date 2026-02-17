@@ -287,24 +287,32 @@ class GloveTracker:
         self,
         model_location: Optional[Union[str, Path]] = None,
         model_name: Optional[str] = None,
+        model_pt_path: Optional[Union[str, Path]] = None
     ) -> None:
         """Load a trained YOLO model.
 
         Args:
             model_location: Directory containing the trained model.
             model_name: Name of the model to load.
+            model_pt_path: Path to the model weights file (.pt).
         """
         self._update_config(
             model_location=model_location,
-            model_name=model_name
+            model_name=model_name,
+            model_pt_path=model_pt_path
         )
-        if self.model_name is None:
+        # Require either model_name or model_pt_path to load a model
+        if self.model_name is None and self.model_pt_path is None:
             raise AssertionError(
-                "model_name must be specified to load a model"
+                "model_name or model_pt_path must be specified "
+                "to load a model"
             )
-        self.model = YOLO(
-            self.model_location / self.model_name / "weights" / "best.pt"
-        )
+        # If model_pt_path is not specified, use the default path
+        if self.model_pt_path is None:
+            self.model_pt_path = (
+                self.model_location / self.model_name / "weights" / "best.pt"
+            )
+        self.model = YOLO(self.model_pt_path)
 
     def save_results_json(
         self,
@@ -372,11 +380,9 @@ class GloveTracker:
             model_pt_path=model_pt_path,
             inference_location=inference_location
         )
-        if self.model_pt_path is None:
-            self.model_pt_path = (
-                self.model_location / self.model_name / "weights" / "best.pt"
-            )
-        self.model = YOLO(self.model_pt_path)
+        if self.model is None:
+            self.load_model()
+
         self.model.eval()
         with torch.inference_mode():
             # If a list, loop over each video
